@@ -1,5 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { IJwtUserPayload } from '../../types/auth.js';
 import {
+  activateDeviceSession,
   refreshSessionTokens,
   registerDeviceSession,
   validateSiteCredentials,
@@ -58,4 +60,9 @@ export async function refreshSession(req: FastifyRequest, reply: FastifyReply) {
   const body = req.body as TRefreshBody;
   const tokens = await refreshSessionTokens(req.server, body.refreshToken);
   return reply.ok({ tokens });
+}
+
+export async function activateDevice(req: FastifyRequest, reply: FastifyReply) {
+  const activation = await activateDeviceSession(req.server, req.user as IJwtUserPayload);
+  return reply.ok(activation);
 }

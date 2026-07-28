@@ -6,6 +6,7 @@ import {
   verifySiteSchema,
 } from './auth.schemas.js';
 import {
+  activateDevice,
   refreshSession,
   registerDevice,
   validateServerAddress,
@@ -22,6 +23,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/verify-site', { schema: { body: verifySiteSchema } }, verifySite);
 
   app.post('/register-device', { schema: { body: registerDeviceSchema } }, registerDevice);
+
+  app.post('/activate-device', { preHandler: app.authenticateUser }, activateDevice);
 
   app.post('/refresh-session', { schema: { body: refreshSchema } }, refreshSession);
 }

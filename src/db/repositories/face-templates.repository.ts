@@ -1,6 +1,6 @@
 import type { RowDataPacket } from 'mysql2';
 import type { Db } from '../pool.js';
-import { query } from '../pool.js';
+import { execute, query } from '../pool.js';
 
 export interface IFaceTemplateRecord {
   employeeId: number;
@@ -85,4 +85,37 @@ export async function listFaceTemplates(
   );
 
   return rows.map(toFaceTemplateRecord);
+}
+
+export async function saveFaceTemplate(
+  db: Db,
+  options: { siteId: number; employeeId: number; faceData: string; template: string },
+): Promise<void> {
+  await execute(
+    db,
+    `
+      INSERT INTO employee_mobile_v2_face (employee_id, site_id, face_data, template)
+      VALUES (?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        face_data = VALUES(face_data),
+        template = VALUES(template),
+        updated_at = CURRENT_TIMESTAMP
+    `,
+    [options.employeeId, options.siteId, options.faceData, options.template],
+  );
+}
+
+export async function deleteFaceTemplate(
+  db: Db,
+  options: { siteId: number; employeeId: number },
+): Promise<void> {
+  await execute(
+    db,
+    `
+      DELETE FROM employee_mobile_v2_face
+      WHERE employee_id = ?
+        AND site_id = ?
+    `,
+    [options.employeeId, options.siteId],
+  );
 }

@@ -1,6 +1,6 @@
 import type { RowDataPacket } from 'mysql2';
 import type { Db } from '../pool.js';
-import { query } from '../pool.js';
+import { execute, query } from '../pool.js';
 
 export interface ISerialNumberRecord {
   siteId: number | null;
@@ -42,4 +42,37 @@ export async function findSerialNumber(
 
   const row = rows[0];
   return row ? toSerialNumberRecord(row) : null;
+}
+
+export async function markSerialNumberOccupied(
+  db: Db,
+  options: { serialNumber: string; siteId: number; readerId: number | undefined },
+): Promise<void> {
+  await execute(
+    db,
+    `
+      UPDATE serial_number
+      SET occupied = 'Yes',
+          site_id = ?,
+          reader_id = COALESCE(?, reader_id)
+      WHERE serial_number = ?
+    `,
+    [options.siteId, options.readerId ?? null, options.serialNumber],
+  );
+}
+
+export async function setSerialNumberReader(
+  db: Db,
+  options: { serialNumber: string; readerId: number },
+): Promise<void> {
+  await execute(
+    db,
+    `
+      UPDATE serial_number
+      SET reader_id = ?
+      WHERE serial_number = ?
+        AND (reader_id IS NULL OR reader_id = ?)
+    `,
+    [options.readerId, options.serialNumber, options.readerId],
+  );
 }
