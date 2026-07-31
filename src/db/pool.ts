@@ -208,6 +208,17 @@ async function trackPoolOperation<T>(db: Db, operation: () => Promise<T>): Promi
   }
 }
 
+/**
+ * Holds a pool "busy" for the full duration of `fn`, not just a single query/execute call.
+ * Wrap any service function that makes more than one sequential `query`/`execute` call against
+ * the same `db` in this — otherwise idle-cleanup or cross-host eviction can close the pool in
+ * the gap between two of those calls (each individually marks itself busy only while in flight),
+ * causing the next call in the same logical operation to fail with "Pool is closed."
+ */
+export async function withPoolLease<T>(db: Db, fn: () => Promise<T>): Promise<T> {
+  return trackPoolOperation(db, fn);
+}
+
 /** Parameterized query helper. `sql` must use `?` or named `:placeholders` — never string-concatenate values in. */
 export async function query<T extends mysql.RowDataPacket[] = mysql.RowDataPacket[]>(
   db: Db,

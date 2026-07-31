@@ -1,27 +1,34 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  ackReaderCommands,
   deleteFaceTemplate,
   faceTemplatesCount,
   listAttendance,
   listJobSiteCodes,
   listEmployees,
   listFaceTemplates,
+  listReaderCommands,
   listWorkSiteActivityCodes,
+  lookupEmployeeByPin,
   saveFaceTemplate,
   saveTemplateExpiryDuration,
   status,
   templateExpiry,
   updateEmployeeAdmin,
   uploadAttendanceClock,
+  verifyPassword,
 } from './sync.controller.js';
 import {
+  ackReaderCommandsSchema,
   attendanceHistoryQuerySchema,
   deleteFaceTemplateSchema,
+  employeeLookupParamsSchema,
   faceTemplatesQuerySchema,
   saveFaceTemplateSchema,
   saveTemplateExpirySchema,
   setEmployeeAdminSchema,
   uploadAttendanceSchema,
+  verifySitePasswordSchema,
 } from './sync.schemas.js';
 
 export async function syncRoutes(app: FastifyInstance): Promise<void> {
@@ -38,6 +45,15 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/employees', { preHandler: app.authenticateUser }, listEmployees);
 
+  app.get(
+    '/employees/:pin',
+    {
+      preHandler: app.authenticateUser,
+      schema: { params: employeeLookupParamsSchema },
+    },
+    lookupEmployeeByPin,
+  );
+
   app.post(
     '/employees/admin',
     {
@@ -45,6 +61,15 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
       schema: { body: setEmployeeAdminSchema },
     },
     updateEmployeeAdmin,
+  );
+
+  app.post(
+    '/site/verify-password',
+    {
+      preHandler: app.authenticateUser,
+      schema: { body: verifySitePasswordSchema },
+    },
+    verifyPassword,
   );
 
   app.get('/job-site-codes', { preHandler: app.authenticateUser }, listJobSiteCodes);
@@ -102,5 +127,16 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
       schema: { body: uploadAttendanceSchema },
     },
     uploadAttendanceClock,
+  );
+
+  app.get('/reader-commands', { preHandler: app.authenticateUser }, listReaderCommands);
+
+  app.post(
+    '/reader-commands/ack',
+    {
+      preHandler: app.authenticateUser,
+      schema: { body: ackReaderCommandsSchema },
+    },
+    ackReaderCommands,
   );
 }

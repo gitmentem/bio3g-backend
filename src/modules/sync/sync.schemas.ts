@@ -55,3 +55,26 @@ export const saveTemplateExpirySchema = z.object({
 });
 
 export type TSaveTemplateExpiryBody = z.infer<typeof saveTemplateExpirySchema>;
+
+export const ackReaderCommandsSchema = z
+  .array(
+    z.object({
+      commandId: z.coerce.number().int().positive(),
+      success: z.boolean(),
+    }),
+  )
+  .min(1);
+
+export type TAckReaderCommandsBody = z.infer<typeof ackReaderCommandsSchema>;
+
+export const employeeLookupParamsSchema = z.object({
+  pin: z.string().min(1),
+});
+
+export type TEmployeeLookupParams = z.infer<typeof employeeLookupParamsSchema>;
+
+export const verifySitePasswordSchema = z.object({
+  sitePassword: z.string().min(1),
+});
+
+export type TVerifySitePasswordBody = z.infer<typeof verifySitePasswordSchema>;

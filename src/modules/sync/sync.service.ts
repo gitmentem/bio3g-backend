@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { TAckReaderCommandsBody } from './sync.schemas.js';
 import {
   attendanceExists,
   insertAttendance,
@@ -6,12 +7,14 @@ import {
 } from '../../db/repositories/attendance.repository.js';
 import {
   employeeExistsForSite,
+  findEmployeeByPin,
   listEmployees,
   setEmployeeAdminStatus,
 } from '../../db/repositories/employees.repository.js';
 import {
   countFaceTemplates,
   deleteFaceTemplate,
+  findFaceTemplateByEmployeeId,
   listFaceTemplates,
   saveFaceTemplate,
 } from '../../db/repositories/face-templates.repository.js';
@@ -22,6 +25,13 @@ import {
   updateReaderSeen,
   type IReaderRecord,
 } from '../../db/repositories/readers.repository.js';
+import {
+  findReaderCommandById,
+  listActiveReaderCommandRows,
+  recordReaderCommandOutcome,
+} from '../../db/repositories/reader-commands.repository.js';
+import { parseReaderCommand } from './reader-command-types.js';
+import { withPoolLease } from '../../db/pool.js';
 import { setSerialNumberReader } from '../../db/repositories/serial-numbers.repository.js';
 import {
   listJobSiteCodes,
@@ -50,7 +60,7 @@ function formatDbDateOnly(date: Date): string {
   return formatDbDate(date).slice(0, 10);
 }
 
-async function resolveReader(
+export async function resolveReader(
   db: Awaited<ReturnType<typeof getUserDb>>,
   user: IJwtUserPayload,
   seenAt: string,
@@ -101,6 +111,28 @@ export async function getEmployees(app: FastifyInstance, user: IJwtUserPayload) 
   });
 }
 
+export async function getEmployeeByPin(
+  app: FastifyInstance,
+  user: IJwtUserPayload,
+  options: { pin: string },
+) {
+  const db = await getUserDb(app, user);
+  return withPoolLease(db, async () => {
+    const employee = await findEmployeeByPin(db, { siteId: user.siteId, pin: options.pin });
+
+    if (!employee) {
+      return { employee: null, faceTemplate: null };
+    }
+
+    const faceTemplate = await findFaceTemplateByEmployeeId(db, {
+      siteId: user.siteId,
+      employeeId: Number(employee.employeeId),
+    });
+
+    return { employee, faceTemplate };
+  });
+}
+
 export async function getFaceTemplateCount(app: FastifyInstance, user: IJwtUserPayload) {
   const db = await getUserDb(app, user);
   return countFaceTemplates(db, {
@@ -139,20 +171,22 @@ export async function saveEmployeeFaceTemplate(
   options: { employeeId: number; faceData: string; template: string },
 ) {
   const db = await getUserDb(app, user);
-  const employeeExists = await employeeExistsForSite(db, {
-    siteId: user.siteId,
-    employeeId: options.employeeId,
-  });
+  await withPoolLease(db, async () => {
+    const employeeExists = await employeeExistsForSite(db, {
+      siteId: user.siteId,
+      employeeId: options.employeeId,
+    });
 
-  if (!employeeExists) {
-    throw new AppError('Employee not found', 404, 'EMPLOYEE_NOT_FOUND');
-  }
+    if (!employeeExists) {
+      throw new AppError('Employee not found', 404, 'EMPLOYEE_NOT_FOUND');
+    }
 
-  await saveFaceTemplate(db, {
-    siteId: user.siteId,
-    employeeId: options.employeeId,
-    faceData: options.faceData,
-    template: options.template,
+    await saveFaceTemplate(db, {
+      siteId: user.siteId,
+      employeeId: options.employeeId,
+      faceData: options.faceData,
+      template: options.template,
+    });
   });
 }
 
@@ -174,29 +208,42 @@ export async function setEmployeeAdmin(
   options: { employeeId: number; isAdmin: boolean; sitePin: string },
 ) {
   const db = await getUserDb(app, user);
-  const site = await findSiteByCodeAndPassword(db, user.siteCode, options.sitePin);
-  if (!site || site.siteId !== user.siteId) {
-    throw new AppError('Invalid site PIN', 401, 'INVALID_SITE_PIN');
-  }
+  return withPoolLease(db, async () => {
+    const site = await findSiteByCodeAndPassword(db, user.siteCode, options.sitePin);
+    if (!site || site.siteId !== user.siteId) {
+      throw new AppError('Invalid site PIN', 401, 'INVALID_SITE_PIN');
+    }
 
-  const employeeExists = await employeeExistsForSite(db, {
-    siteId: user.siteId,
-    employeeId: options.employeeId,
+    const employeeExists = await employeeExistsForSite(db, {
+      siteId: user.siteId,
+      employeeId: options.employeeId,
+    });
+    if (!employeeExists) {
+      throw new AppError('Employee not found', 404, 'EMPLOYEE_NOT_FOUND');
+    }
+
+    await setEmployeeAdminStatus(db, {
+      siteId: user.siteId,
+      employeeId: options.employeeId,
+      isAdmin: options.isAdmin,
+    });
+
+    return {
+      employeeId: options.employeeId,
+      isAdmin: options.isAdmin,
+    };
   });
-  if (!employeeExists) {
-    throw new AppError('Employee not found', 404, 'EMPLOYEE_NOT_FOUND');
-  }
+}
 
-  await setEmployeeAdminStatus(db, {
-    siteId: user.siteId,
-    employeeId: options.employeeId,
-    isAdmin: options.isAdmin,
-  });
+export async function verifySitePassword(
+  app: FastifyInstance,
+  user: IJwtUserPayload,
+  options: { sitePassword: string },
+) {
+  const db = await getUserDb(app, user);
+  const site = await findSiteByCodeAndPassword(db, user.siteCode, options.sitePassword);
 
-  return {
-    employeeId: options.employeeId,
-    isAdmin: options.isAdmin,
-  };
+  return { isValid: site?.siteId === user.siteId };
 }
 
 export async function uploadAttendance(
@@ -214,43 +261,45 @@ export async function uploadAttendance(
   },
 ) {
   const db = await getUserDb(app, user);
-  const seenAt = formatDbDate(new Date());
-  const reader = await resolveReader(db, user, seenAt);
+  return withPoolLease(db, async () => {
+    const seenAt = formatDbDate(new Date());
+    const reader = await resolveReader(db, user, seenAt);
 
-  await updateReaderSeen(db, {
-    readerId: reader.readerId,
-    seenAt,
-  });
+    await updateReaderSeen(db, {
+      readerId: reader.readerId,
+      seenAt,
+    });
 
-  const duplicate = await attendanceExists(db, {
-    employeeId: options.employeeId,
-    readerId: reader.readerId,
-    clockTime: options.clockTime,
-  });
+    const duplicate = await attendanceExists(db, {
+      employeeId: options.employeeId,
+      readerId: reader.readerId,
+      clockTime: options.clockTime,
+    });
 
-  if (duplicate) {
+    if (duplicate) {
+      return {
+        uploaded: false,
+        duplicate: true,
+      };
+    }
+
+    await insertAttendance(db, {
+      employeeId: options.employeeId,
+      employeePin: options.employeePin,
+      readerId: reader.readerId,
+      clockTime: options.clockTime,
+      status: options.status,
+      workCode: reader.overrideWorkCode || options.workSiteActivityCode,
+      jobCode: options.jobSiteCode,
+      clockGps: options.clockGps,
+      clockPhoto: options.clockPhoto,
+    });
+
     return {
-      uploaded: false,
-      duplicate: true,
+      uploaded: true,
+      duplicate: false,
     };
-  }
-
-  await insertAttendance(db, {
-    employeeId: options.employeeId,
-    employeePin: options.employeePin,
-    readerId: reader.readerId,
-    clockTime: options.clockTime,
-    status: options.status,
-    workCode: reader.overrideWorkCode || options.workSiteActivityCode,
-    jobCode: options.jobSiteCode,
-    clockGps: options.clockGps,
-    clockPhoto: options.clockPhoto,
   });
-
-  return {
-    uploaded: true,
-    duplicate: false,
-  };
 }
 
 export async function getAttendanceHistory(
@@ -302,4 +351,60 @@ export async function saveTemplateExpiry(
   return {
     expirySeconds: options.expirySeconds,
   };
+}
+
+export async function getReaderCommands(app: FastifyInstance, user: IJwtUserPayload) {
+  const db = await getUserDb(app, user);
+  return withPoolLease(db, async () => {
+    const seenAt = formatDbDate(new Date());
+    const reader = await resolveReader(db, user, seenAt);
+
+    await updateReaderSeen(db, {
+      readerId: reader.readerId,
+      seenAt,
+    });
+
+    const rows = await listActiveReaderCommandRows(db, { readerId: reader.readerId });
+
+    const commands = [];
+    for (const row of rows) {
+      const parsed = parseReaderCommand(row.command);
+      if (parsed) {
+        commands.push({
+          commandId: row.command_id,
+          type: parsed.type,
+          data: parsed.data,
+        });
+        continue;
+      }
+
+      await recordReaderCommandOutcome(db, { command: row, success: false });
+    }
+
+    return { commands };
+  });
+}
+
+export async function acknowledgeReaderCommands(
+  app: FastifyInstance,
+  user: IJwtUserPayload,
+  results: TAckReaderCommandsBody,
+) {
+  const db = await getUserDb(app, user);
+  await withPoolLease(db, async () => {
+    const reader = await resolveReader(db, user, formatDbDate(new Date()));
+
+    for (const result of results) {
+      const command = await findReaderCommandById(db, {
+        readerId: reader.readerId,
+        commandId: result.commandId,
+      });
+
+      if (!command) {
+        continue;
+      }
+
+      await recordReaderCommandOutcome(db, { command, success: result.success });
+    }
+  });
 }

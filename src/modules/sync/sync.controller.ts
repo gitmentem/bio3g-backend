@@ -1,21 +1,27 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { IJwtUserPayload } from '../../types/auth.js';
 import type {
+  TAckReaderCommandsBody,
   TAttendanceHistoryQuery,
   TDeleteFaceTemplateBody,
+  TEmployeeLookupParams,
   TFaceTemplatesQuery,
   TSaveFaceTemplateBody,
   TSaveTemplateExpiryBody,
   TSetEmployeeAdminBody,
   TUploadAttendanceBody,
+  TVerifySitePasswordBody,
 } from './sync.schemas.js';
 import {
+  acknowledgeReaderCommands,
   deleteEmployeeFaceTemplate,
   getAttendanceHistory,
+  getEmployeeByPin,
   getEmployees,
   getFaceTemplateCount,
   getFaceTemplates,
   getJobSiteCodes,
+  getReaderCommands,
   getSyncStatus,
   getTemplateExpiry,
   getWorkSiteActivityCodes,
@@ -23,6 +29,7 @@ import {
   saveTemplateExpiry,
   setEmployeeAdmin,
   uploadAttendance,
+  verifySitePassword,
 } from './sync.service.js';
 
 export async function status(_req: FastifyRequest, reply: FastifyReply) {
@@ -32,6 +39,12 @@ export async function status(_req: FastifyRequest, reply: FastifyReply) {
 export async function listEmployees(req: FastifyRequest, reply: FastifyReply) {
   const employees = await getEmployees(req.server, req.user as IJwtUserPayload);
   return reply.ok({ employees });
+}
+
+export async function lookupEmployeeByPin(req: FastifyRequest, reply: FastifyReply) {
+  const params = req.params as TEmployeeLookupParams;
+  const result = await getEmployeeByPin(req.server, req.user as IJwtUserPayload, params);
+  return reply.ok(result);
 }
 
 export async function listAttendance(req: FastifyRequest, reply: FastifyReply) {
@@ -109,5 +122,22 @@ export async function updateEmployeeAdmin(req: FastifyRequest, reply: FastifyRep
 export async function uploadAttendanceClock(req: FastifyRequest, reply: FastifyReply) {
   const body = req.body as TUploadAttendanceBody;
   const result = await uploadAttendance(req.server, req.user as IJwtUserPayload, body);
+  return reply.ok(result);
+}
+
+export async function listReaderCommands(req: FastifyRequest, reply: FastifyReply) {
+  const result = await getReaderCommands(req.server, req.user as IJwtUserPayload);
+  return reply.ok(result);
+}
+
+export async function ackReaderCommands(req: FastifyRequest, reply: FastifyReply) {
+  const body = req.body as TAckReaderCommandsBody;
+  await acknowledgeReaderCommands(req.server, req.user as IJwtUserPayload, body);
+  return reply.ok({});
+}
+
+export async function verifyPassword(req: FastifyRequest, reply: FastifyReply) {
+  const body = req.body as TVerifySitePasswordBody;
+  const result = await verifySitePassword(req.server, req.user as IJwtUserPayload, body);
   return reply.ok(result);
 }

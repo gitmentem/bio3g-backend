@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { withPoolLease } from '../../db/pool.js';
 import {
   findSerialNumber,
   markSerialNumberOccupied,
@@ -150,33 +151,40 @@ export async function activateDeviceSession(
   if (!user.serialNumber) {
     throw new AppError('Serial number is required', 400, 'SERIAL_REQUIRED');
   }
+  const serialNumber = user.serialNumber;
 
   const db = await app.dbPools.getPool(user.serverAddress);
-  const serial = await findSerialNumber(db, user.serialNumber);
-  if (!serial) {
-    throw new AppError('Invalid serial number', 404, 'SERIAL_NOT_FOUND');
-  }
+  return withPoolLease(db, async () => {
+    const serial = await findSerialNumber(db, serialNumber);
+    if (!serial) {
+      throw new AppError('Invalid serial number', 404, 'SERIAL_NOT_FOUND');
+    }
 
-  if (serial.siteId !== null && serial.siteId !== user.siteId) {
-    throw new AppError('Serial number does not belong to this site', 403, 'SERIAL_SITE_MISMATCH');
-  }
+    if (serial.siteId !== null && serial.siteId !== user.siteId) {
+      throw new AppError(
+        'Serial number does not belong to this site',
+        403,
+        'SERIAL_SITE_MISMATCH',
+      );
+    }
 
-  if (
-    serial.occupied === 'Yes' &&
-    serial.readerId !== null &&
-    user.readerId !== undefined &&
-    serial.readerId !== user.readerId
-  ) {
-    throw new AppError('Serial number is already in use', 409, 'SERIAL_OCCUPIED');
-  }
+    if (
+      serial.occupied === 'Yes' &&
+      serial.readerId !== null &&
+      user.readerId !== undefined &&
+      serial.readerId !== user.readerId
+    ) {
+      throw new AppError('Serial number is already in use', 409, 'SERIAL_OCCUPIED');
+    }
 
-  if (serial.occupied === 'No') {
-    await markSerialNumberOccupied(db, {
-      serialNumber: user.serialNumber,
-      siteId: user.siteId,
-      readerId: user.readerId,
-    });
-  }
+    if (serial.occupied === 'No') {
+      await markSerialNumberOccupied(db, {
+        serialNumber,
+        siteId: user.siteId,
+        readerId: user.readerId,
+      });
+    }
 
-  return { activated: true };
+    return { activated: true };
+  });
 }

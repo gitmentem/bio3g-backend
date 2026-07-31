@@ -62,6 +62,28 @@ export async function listEmployees(
   return rows.map(toEmployeeRecord);
 }
 
+export async function findEmployeeByPin(
+  db: Db,
+  options: { siteId: number; pin: string },
+): Promise<IEmployeeRecord | null> {
+  const rows = await query<IEmployeeRow[]>(
+    db,
+    `
+      SELECT e.employee_id, e.pin, e.name, e.password, e.site_id, e.priv
+      FROM employee e
+      WHERE e.site_id = ?
+        AND e.pin = ?
+        AND e.status = 'Active'
+        AND e.mobile = 'Yes'
+      LIMIT 1
+    `,
+    [options.siteId, options.pin],
+  );
+
+  const row = rows[0];
+  return row ? toEmployeeRecord(row) : null;
+}
+
 export async function employeeExistsForSite(
   db: Db,
   options: { siteId: number; employeeId: number },

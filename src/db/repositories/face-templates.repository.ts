@@ -87,6 +87,26 @@ export async function listFaceTemplates(
   return rows.map(toFaceTemplateRecord);
 }
 
+export async function findFaceTemplateByEmployeeId(
+  db: Db,
+  options: { siteId: number; employeeId: number },
+): Promise<IFaceTemplateRecord | null> {
+  const rows = await query<IFaceTemplateRow[]>(
+    db,
+    `
+      SELECT eft.employee_id, eft.site_id, eft.face_data, eft.template
+      FROM employee_mobile_v2_face eft
+      WHERE eft.site_id = ?
+        AND eft.employee_id = ?
+      LIMIT 1
+    `,
+    [options.siteId, options.employeeId],
+  );
+
+  const row = rows[0];
+  return row ? toFaceTemplateRecord(row) : null;
+}
+
 export async function saveFaceTemplate(
   db: Db,
   options: { siteId: number; employeeId: number; faceData: string; template: string },
