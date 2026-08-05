@@ -31,7 +31,7 @@ import {
   recordReaderCommandOutcome,
 } from '../../db/repositories/reader-commands.repository.js';
 import { parseReaderCommand } from './reader-command-types.js';
-import { withPoolLease } from '../../db/pool.js';
+import { getDbNow, withPoolLease } from '../../db/pool.js';
 import { setSerialNumberReader } from '../../db/repositories/serial-numbers.repository.js';
 import {
   listJobSiteCodes,
@@ -49,21 +49,9 @@ async function getUserDb(app: FastifyInstance, user: IJwtUserPayload) {
   return app.dbPools.getPool(user.serverAddress);
 }
 
-function formatDbDate(date: Date): string {
-  const pad = (value: number) => value.toString().padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
-function formatDbDateOnly(date: Date): string {
-  return formatDbDate(date).slice(0, 10);
-}
-
 export async function resolveReader(
   db: Awaited<ReturnType<typeof getUserDb>>,
   user: IJwtUserPayload,
-  seenAt: string,
 ): Promise<IReaderRecord> {
   if (user.readerId) {
     const reader = await findReaderById(db, user.readerId);
@@ -88,7 +76,6 @@ export async function resolveReader(
   const readerId = await createAppReader(db, {
     serialNumber: user.serialNumber,
     siteId: user.siteId,
-    seenAt,
   });
   await setSerialNumberReader(db, {
     serialNumber: user.serialNumber,
@@ -262,8 +249,7 @@ export async function uploadAttendance(
 ) {
   const db = await getUserDb(app, user);
   return withPoolLease(db, async () => {
-    const seenAt = formatDbDate(new Date());
-    const reader = await resolveReader(db, user, seenAt);
+    const reader = await resolveReader(db, user);
 
     const duplicate = await attendanceExists(db, {
       employeeId: options.employeeId,
@@ -303,7 +289,7 @@ export async function getAttendanceHistory(
   options: { date?: string | undefined },
 ) {
   const db = await getUserDb(app, user);
-  const today = formatDbDateOnly(new Date());
+  const today = (await getDbNow(db)).slice(0, 10);
   const date = options.date ?? today;
   const attendance = await listAttendanceByDate(db, {
     siteId: user.siteId,
@@ -319,17 +305,15 @@ export async function getAttendanceHistory(
 export async function getSyncStatus(app: FastifyInstance, user: IJwtUserPayload) {
   const db = await getUserDb(app, user);
   return withPoolLease(db, async () => {
-    const seenAt = formatDbDate(new Date());
-    const reader = await resolveReader(db, user, seenAt);
+    const reader = await resolveReader(db, user);
 
     await updateReaderSeen(db, {
       readerId: reader.readerId,
-      seenAt,
     });
 
     return {
       online: true,
-      serverTime: seenAt,
+      serverTime: await getDbNow(db),
     };
   });
 }
@@ -362,8 +346,7 @@ export async function saveTemplateExpiry(
 export async function getReaderCommands(app: FastifyInstance, user: IJwtUserPayload) {
   const db = await getUserDb(app, user);
   return withPoolLease(db, async () => {
-    const seenAt = formatDbDate(new Date());
-    const reader = await resolveReader(db, user, seenAt);
+    const reader = await resolveReader(db, user);
 
     const rows = await listActiveReaderCommandRows(db, { readerId: reader.readerId });
 
@@ -393,7 +376,7 @@ export async function acknowledgeReaderCommands(
 ) {
   const db = await getUserDb(app, user);
   await withPoolLease(db, async () => {
-    const reader = await resolveReader(db, user, formatDbDate(new Date()));
+    const reader = await resolveReader(db, user);
 
     for (const result of results) {
       const command = await findReaderCommandById(db, {

@@ -278,6 +278,12 @@ export async function execute(
   }
 }
 
+/** Returns the database server's current time (`YYYY-MM-DD HH:MM:SS`), not the app server's clock. */
+export async function getDbNow(db: Db): Promise<string> {
+  const rows = await query<(mysql.RowDataPacket & { now: string })[]>(db, 'SELECT NOW() AS now');
+  return rows[0]!.now;
+}
+
 /** Runs `fn` inside a transaction, committing on success and rolling back on any thrown error. */
 export async function withTransaction<T>(
   db: Db,

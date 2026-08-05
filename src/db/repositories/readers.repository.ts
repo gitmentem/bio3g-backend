@@ -59,7 +59,7 @@ export async function findReaderBySerialNumber(
 
 export async function createAppReader(
   db: Db,
-  options: { serialNumber: string; siteId: number; seenAt: string },
+  options: { serialNumber: string; siteId: number },
 ): Promise<number> {
   const result = await execute(
     db,
@@ -78,25 +78,22 @@ export async function createAppReader(
         transflag,
         cellphone
       )
-      VALUES (?, '9999', ?, '9999', 1, '', '9999', ?, 2, 'Yes', '999999', '')
+      VALUES (?, '9999', ?, '9999', 1, '', '9999', NOW(), 2, 'Yes', '999999', '')
     `,
-    [options.serialNumber, options.siteId, options.seenAt],
+    [options.serialNumber, options.siteId],
   );
 
   return Number((result as ResultSetHeader).insertId);
 }
 
-export async function updateReaderSeen(
-  db: Db,
-  options: { readerId: number; seenAt: string },
-): Promise<void> {
+export async function updateReaderSeen(db: Db, options: { readerId: number }): Promise<void> {
   await execute(
     db,
     `
       UPDATE reader
-      SET seen = ?
+      SET seen = NOW()
       WHERE reader_id = ?
     `,
-    [options.seenAt, options.readerId],
+    [options.readerId],
   );
 }
