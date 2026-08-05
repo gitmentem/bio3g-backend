@@ -265,11 +265,6 @@ export async function uploadAttendance(
     const seenAt = formatDbDate(new Date());
     const reader = await resolveReader(db, user, seenAt);
 
-    await updateReaderSeen(db, {
-      readerId: reader.readerId,
-      seenAt,
-    });
-
     const duplicate = await attendanceExists(db, {
       employeeId: options.employeeId,
       readerId: reader.readerId,
@@ -321,11 +316,22 @@ export async function getAttendanceHistory(
   };
 }
 
-export function getSyncStatus() {
-  return {
-    online: true,
-    serverTime: formatDbDate(new Date()),
-  };
+export async function getSyncStatus(app: FastifyInstance, user: IJwtUserPayload) {
+  const db = await getUserDb(app, user);
+  return withPoolLease(db, async () => {
+    const seenAt = formatDbDate(new Date());
+    const reader = await resolveReader(db, user, seenAt);
+
+    await updateReaderSeen(db, {
+      readerId: reader.readerId,
+      seenAt,
+    });
+
+    return {
+      online: true,
+      serverTime: seenAt,
+    };
+  });
 }
 
 export async function getTemplateExpiry(app: FastifyInstance, user: IJwtUserPayload) {
@@ -358,11 +364,6 @@ export async function getReaderCommands(app: FastifyInstance, user: IJwtUserPayl
   return withPoolLease(db, async () => {
     const seenAt = formatDbDate(new Date());
     const reader = await resolveReader(db, user, seenAt);
-
-    await updateReaderSeen(db, {
-      readerId: reader.readerId,
-      seenAt,
-    });
 
     const rows = await listActiveReaderCommandRows(db, { readerId: reader.readerId });
 

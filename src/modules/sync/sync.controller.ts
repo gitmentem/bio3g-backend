@@ -32,8 +32,9 @@ import {
   verifySitePassword,
 } from './sync.service.js';
 
-export async function status(_req: FastifyRequest, reply: FastifyReply) {
-  return reply.ok(getSyncStatus());
+export async function status(req: FastifyRequest, reply: FastifyReply) {
+  const result = await getSyncStatus(req.server, req.user as IJwtUserPayload);
+  return reply.ok(result);
 }
 
 export async function listEmployees(req: FastifyRequest, reply: FastifyReply) {
