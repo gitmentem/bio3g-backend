@@ -22,5 +22,9 @@ export async function signJwtPlugin(app: FastifyInstance, env: Env): Promise<voi
     } catch {
       throw new AppError('Invalid or expired token', 401, 'UNAUTHORIZED');
     }
+
+    if (req.user.tokenUse === 'qr-login') {
+      throw new AppError('Invalid or expired token', 401, 'UNAUTHORIZED');
+    }
   });
 }

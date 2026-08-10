@@ -16,6 +16,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(1),
   JWT_ACCESS_EXPIRES_IN: z.string().default('24h'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('90d'),
+  QR_LOGIN_TOKEN_EXPIRES_IN: z.string().default('5m'),
 });
 
 export type Env = z.infer<typeof envSchema>;

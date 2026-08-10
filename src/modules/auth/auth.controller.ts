@@ -1,17 +1,23 @@
+import QRCode from 'qrcode';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { IJwtUserPayload } from '../../types/auth.js';
 import {
   activateDeviceSession,
+  mintQrLoginToken,
+  redeemQrLoginToken,
   refreshSessionTokens,
   registerDeviceSession,
   validateSiteCredentials,
 } from './auth.service.js';
 import type {
+  TQrLoginGenerateBody,
+  TQrLoginRedeemBody,
   TRefreshBody,
   TRegisterDeviceBody,
   TValidateServerAddressBody,
   TVerifySiteBody,
 } from './auth.schemas.js';
+import { QR_LOGIN_PAGE_HTML } from './qr-login-page.js';
 
 export async function validateServerAddress(req: FastifyRequest, reply: FastifyReply) {
   const serverAddress = (req.body as TValidateServerAddressBody).serverAddress;
@@ -65,4 +71,37 @@ export async function refreshSession(req: FastifyRequest, reply: FastifyReply) {
 export async function activateDevice(req: FastifyRequest, reply: FastifyReply) {
   const activation = await activateDeviceSession(req.server, req.user as IJwtUserPayload);
   return reply.ok(activation);
+}
+
+export async function generateQrLogin(req: FastifyRequest, reply: FastifyReply) {
+  const { serverAddress, siteCode, userPin, serialNumber } = req.body as TQrLoginGenerateBody;
+  const minted = await mintQrLoginToken(req.server, serverAddress, siteCode, userPin, serialNumber);
+  const qrImage = await QRCode.toDataURL(minted.qrToken, { width: 480, margin: 2 });
+
+  return reply.ok({
+    site: minted.site,
+    qrImage,
+    qrToken: minted.qrToken,
+    expiresIn: minted.expiresIn,
+    serialNumber: minted.serialNumber,
+  });
+}
+
+export async function redeemQrLogin(req: FastifyRequest, reply: FastifyReply) {
+  const { qrToken } = req.body as TQrLoginRedeemBody;
+  const session = await redeemQrLoginToken(req.server, qrToken);
+
+  return reply.ok({
+    site: session.site,
+    tokens: {
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+    },
+    serialNumber: session.serialNumber,
+    serverAddress: session.serverAddress,
+  });
+}
+
+export async function qrLoginPage(_req: FastifyRequest, reply: FastifyReply) {
+  return reply.type('text/html').send(QR_LOGIN_PAGE_HTML);
 }

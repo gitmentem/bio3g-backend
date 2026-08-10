@@ -11,12 +11,15 @@ import { responsePlugin } from './plugins/response.js';
 import { corsPlugin } from './plugins/cors.js';
 import { signJwtPlugin } from './plugins/sign-jwt.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
+import { qrLoginPage } from './modules/auth/auth.controller.js';
+import { QrLoginTokenStore } from './modules/auth/qr-login-token-store.js';
 import { syncRoutes } from './modules/sync/sync.routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
     config: Env;
     dbPools: DbPoolManager;
+    qrLoginTokens: QrLoginTokenStore;
   }
 }
 
@@ -35,6 +38,12 @@ export async function buildApp(env: Env) {
     await dbPools.closeAll();
   });
 
+  const qrLoginTokens = new QrLoginTokenStore();
+  app.decorate('qrLoginTokens', qrLoginTokens);
+  app.addHook('onClose', async () => {
+    qrLoginTokens.stop();
+  });
+
   await app.register(corsPlugin);
   await app.register(responsePlugin);
   await signJwtPlugin(app, env);
@@ -45,6 +54,8 @@ export async function buildApp(env: Env) {
   app.get('/', async (_req, reply) => {
     reply.ok({ message: 'Hello, World!' });
   });
+
+  app.get('/qr-login', qrLoginPage);
 
   return app;
 }

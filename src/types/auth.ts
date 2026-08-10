@@ -7,7 +7,10 @@ export interface IJwtUserPayload {
   siteName: string;
   serialNumber?: string;
   readerId?: number;
-  tokenUse?: 'access' | 'refresh';
+  tokenUse?: 'access' | 'refresh' | 'qr-login';
+  jti?: string;
+  exp?: number | undefined;
+  iat?: number | undefined;
 }
 
 declare module '@fastify/jwt' {

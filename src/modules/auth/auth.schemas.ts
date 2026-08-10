@@ -28,3 +28,15 @@ export const refreshSchema = z.object({
 });
 
 export type TRefreshBody = z.infer<typeof refreshSchema>;
+
+export const qrLoginGenerateSchema = verifySiteSchema.extend({
+  serialNumber: z.string().min(1),
+});
+
+export type TQrLoginGenerateBody = z.infer<typeof qrLoginGenerateSchema>;
+
+export const qrLoginRedeemSchema = z.object({
+  qrToken: z.string().min(1),
+});
+
+export type TQrLoginRedeemBody = z.infer<typeof qrLoginRedeemSchema>;

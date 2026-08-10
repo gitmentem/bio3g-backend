@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { withPoolLease } from '../../db/pool.js';
+import { withPoolLease, type Db } from '../../db/pool.js';
 import {
   findSerialNumber,
   markSerialNumberOccupied,
+  type ISerialNumberRecord,
 } from '../../db/repositories/serial-numbers.repository.js';
 import {
   findSiteByCodeAndPassword,
@@ -15,6 +17,11 @@ export interface IAuthSession {
   site: ISiteLoginRecord;
   accessToken: string;
   refreshToken: string;
+}
+
+export interface IQrLoginSession extends IAuthSession {
+  serialNumber: string;
+  serverAddress: string;
 }
 
 export interface ISiteVerification {
@@ -47,9 +54,10 @@ export async function validateSiteCredentials(
 function buildPayload(
   site: ISiteLoginRecord,
   serverAddress: string,
-  tokenUse: 'access' | 'refresh',
+  tokenUse: 'access' | 'refresh' | 'qr-login',
   serialNumber?: string,
   readerId?: number | null,
+  jti?: string,
 ): IJwtUserPayload {
   const payload: IJwtUserPayload = {
     sub: `site:${site.siteId}`,
@@ -66,7 +74,52 @@ function buildPayload(
   if (readerId) {
     payload.readerId = readerId;
   }
+  if (jti) {
+    payload.jti = jti;
+  }
   return payload;
+}
+
+async function validateSerialForSite(
+  db: Db,
+  site: ISiteLoginRecord,
+  serialNumber: string,
+): Promise<ISerialNumberRecord> {
+  const serial = await findSerialNumber(db, serialNumber);
+  if (!serial) {
+    throw new AppError('Invalid serial number', 404, 'SERIAL_NOT_FOUND');
+  }
+
+  if (serial.siteId !== null && serial.siteId !== site.siteId) {
+    throw new AppError('Serial number does not belong to this site', 403, 'SERIAL_SITE_MISMATCH');
+  }
+
+  if (serial.occupied === 'Yes') {
+    throw new AppError('Serial number is already in use', 409, 'SERIAL_OCCUPIED');
+  }
+
+  return serial;
+}
+
+async function issueDeviceSession(
+  app: FastifyInstance,
+  serverAddress: string,
+  site: ISiteLoginRecord,
+  serialNumber: string,
+): Promise<IAuthSession> {
+  const db = await app.dbPools.getPool(serverAddress);
+  const serial = await validateSerialForSite(db, site, serialNumber);
+
+  return {
+    site,
+    accessToken: app.jwt.sign(buildPayload(site, serverAddress, 'access', serialNumber, serial.readerId)),
+    refreshToken: app.jwt.sign(
+      buildPayload(site, serverAddress, 'refresh', serialNumber, serial.readerId),
+      {
+        expiresIn: app.config.JWT_REFRESH_EXPIRES_IN,
+      },
+    ),
+  };
 }
 
 export async function registerDeviceSession(
@@ -77,33 +130,93 @@ export async function registerDeviceSession(
   serialNumber: string,
 ): Promise<IAuthSession> {
   const verified = await validateSiteCredentials(app, serverAddress, siteCode, password);
+  return issueDeviceSession(app, verified.serverAddress, verified.site, serialNumber);
+}
+
+export interface IQrLoginToken {
+  site: ISiteLoginRecord;
+  qrToken: string;
+  expiresIn: string;
+  serialNumber: string;
+}
+
+export async function mintQrLoginToken(
+  app: FastifyInstance,
+  serverAddress: string,
+  siteCode: string,
+  userPin: string,
+  serialNumber: string,
+): Promise<IQrLoginToken> {
+  const verified = await validateSiteCredentials(app, serverAddress, siteCode, userPin);
 
   const db = await app.dbPools.getPool(verified.serverAddress);
-  const serial = await findSerialNumber(db, serialNumber);
-  if (!serial) {
-    throw new AppError('Invalid serial number', 404, 'SERIAL_NOT_FOUND');
-  }
+  await validateSerialForSite(db, verified.site, serialNumber);
 
-  if (serial.siteId !== null && serial.siteId !== verified.site.siteId) {
-    throw new AppError('Serial number does not belong to this site', 403, 'SERIAL_SITE_MISMATCH');
-  }
+  const expiresIn = app.config.QR_LOGIN_TOKEN_EXPIRES_IN;
 
-  if (serial.occupied === 'Yes') {
-    throw new AppError('Serial number is already in use', 409, 'SERIAL_OCCUPIED');
-  }
-
-  return {
-    site: verified.site,
-    accessToken: app.jwt.sign(
-      buildPayload(verified.site, verified.serverAddress, 'access', serialNumber, serial.readerId),
+  const qrToken = app.jwt.sign(
+    buildPayload(
+      verified.site,
+      verified.serverAddress,
+      'qr-login',
+      serialNumber,
+      undefined,
+      randomUUID(),
     ),
-    refreshToken: app.jwt.sign(
-      buildPayload(verified.site, verified.serverAddress, 'refresh', serialNumber, serial.readerId),
-      {
-        expiresIn: app.config.JWT_REFRESH_EXPIRES_IN,
-      },
-    ),
+    { expiresIn },
+  );
+
+  return { site: verified.site, qrToken, expiresIn, serialNumber };
+}
+
+const RETRYABLE_SERIAL_ERROR_CODES = new Set([
+  'SERIAL_NOT_FOUND',
+  'SERIAL_SITE_MISMATCH',
+  'SERIAL_OCCUPIED',
+]);
+
+export async function redeemQrLoginToken(
+  app: FastifyInstance,
+  qrToken: string,
+): Promise<IQrLoginSession> {
+  let payload: IJwtUserPayload;
+  try {
+    payload = app.jwt.verify<IJwtUserPayload>(qrToken);
+  } catch {
+    throw new AppError('Invalid or expired QR code', 401, 'QR_TOKEN_INVALID');
+  }
+
+  if (
+    payload.tokenUse !== 'qr-login' ||
+    !payload.jti ||
+    !payload.exp ||
+    !payload.serialNumber
+  ) {
+    throw new AppError('Invalid or expired QR code', 401, 'QR_TOKEN_INVALID');
+  }
+
+  if (!app.qrLoginTokens.tryReserve(payload.jti, payload.exp * 1000)) {
+    throw new AppError('QR code has already been used', 401, 'QR_TOKEN_CONSUMED');
+  }
+
+  const site: ISiteLoginRecord = {
+    siteId: payload.siteId,
+    siteCode: payload.siteCode,
+    siteName: payload.siteName,
   };
+
+  const serialNumber = payload.serialNumber;
+  const serverAddress = payload.serverAddress;
+
+  try {
+    const session = await issueDeviceSession(app, serverAddress, site, serialNumber);
+    return { ...session, serialNumber, serverAddress };
+  } catch (err) {
+    if (err instanceof AppError && RETRYABLE_SERIAL_ERROR_CODES.has(err.code)) {
+      app.qrLoginTokens.release(payload.jti);
+    }
+    throw err;
+  }
 }
 
 export async function refreshSessionTokens(

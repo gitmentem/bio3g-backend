@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  qrLoginGenerateSchema,
+  qrLoginRedeemSchema,
   registerDeviceSchema,
   refreshSchema,
   validateServerAddressSchema,
@@ -7,6 +9,8 @@ import {
 } from './auth.schemas.js';
 import {
   activateDevice,
+  generateQrLogin,
+  redeemQrLogin,
   refreshSession,
   registerDevice,
   validateServerAddress,
@@ -27,4 +31,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/activate-device', { preHandler: app.authenticateUser }, activateDevice);
 
   app.post('/refresh-session', { schema: { body: refreshSchema } }, refreshSession);
+
+  app.post('/qr-login/generate', { schema: { body: qrLoginGenerateSchema } }, generateQrLogin);
+
+  app.post('/qr-login/redeem', { schema: { body: qrLoginRedeemSchema } }, redeemQrLogin);
 }
