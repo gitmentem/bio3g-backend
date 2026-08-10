@@ -353,16 +353,18 @@ export async function getReaderCommands(app: FastifyInstance, user: IJwtUserPayl
     const commands = [];
     for (const row of rows) {
       const parsed = parseReaderCommand(row.command);
-      if (parsed) {
-        commands.push({
-          commandId: row.command_id,
-          type: parsed.type,
-          data: parsed.data,
-        });
+      if (parsed.length === 0) {
+        await recordReaderCommandOutcome(db, { command: row, success: false });
         continue;
       }
 
-      await recordReaderCommandOutcome(db, { command: row, success: false });
+      for (const item of parsed) {
+        commands.push({
+          commandId: row.command_id,
+          type: item.type,
+          data: item.data,
+        });
+      }
     }
 
     return { commands };
