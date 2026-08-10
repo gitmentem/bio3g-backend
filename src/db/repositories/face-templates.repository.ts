@@ -45,6 +45,13 @@ export async function countFaceTemplates(
       SELECT COUNT(*) AS total
       FROM employee_mobile_v2_face eft
       WHERE eft.site_id = ?
+        AND EXISTS (
+          SELECT 1
+          FROM employee e
+          WHERE e.employee_id = eft.employee_id
+            AND e.status = 'Active'
+            AND e.mobile = 'Yes'
+        )
         ${readerFilter}
     `,
     params,
@@ -77,6 +84,13 @@ export async function listFaceTemplates(
       SELECT eft.employee_id, eft.site_id, eft.face_data, eft.template
       FROM employee_mobile_v2_face eft
       WHERE eft.site_id = ?
+        AND EXISTS (
+          SELECT 1
+          FROM employee e
+          WHERE e.employee_id = eft.employee_id
+            AND e.status = 'Active'
+            AND e.mobile = 'Yes'
+        )
         ${readerFilter}
       ORDER BY eft.employee_id ASC
       LIMIT ? OFFSET ?
