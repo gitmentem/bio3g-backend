@@ -150,29 +150,31 @@ export const QR_LOGIN_PAGE_HTML = String.raw`<!doctype html>
     var siteLabel = document.getElementById('site-label');
     var downloadLink = document.getElementById('download-link');
     var generateBtn = document.getElementById('generate-btn');
-    var countdownTimer = null;
+    var expiryTimer = null;
 
     function parseExpiresInSeconds(expiresIn) {
       var match = /^(\d+)\s*([smhd])$/.exec(String(expiresIn).trim());
-      if (!match) return 300;
+      if (!match) return 43200;
       var multipliers = { s: 1, m: 60, h: 3600, d: 86400 };
       return Number(match[1]) * multipliers[match[2]];
     }
 
-    function startCountdown(seconds) {
-      if (countdownTimer) clearInterval(countdownTimer);
-      var remaining = seconds;
-      countdownEl.textContent = 'Expires in ' + remaining + 's';
-      countdownTimer = setInterval(function () {
-        remaining -= 1;
-        if (remaining <= 0) {
-          clearInterval(countdownTimer);
-          countdownEl.textContent = 'Expired — generate a new code';
-          qrImage.style.opacity = '0.3';
-          return;
-        }
-        countdownEl.textContent = 'Expires in ' + remaining + 's';
-      }, 1000);
+    function formatDuration(expiresIn) {
+      var match = /^(\d+)\s*([smhd])$/.exec(String(expiresIn).trim());
+      if (!match) return String(expiresIn);
+      var value = Number(match[1]);
+      var unitNames = { s: 'second', m: 'minute', h: 'hour', d: 'day' };
+      var unit = unitNames[match[2]];
+      return value + ' ' + unit + (value === 1 ? '' : 's');
+    }
+
+    function startExpiry(expiresIn) {
+      if (expiryTimer) clearTimeout(expiryTimer);
+      countdownEl.textContent = 'Valid for ' + formatDuration(expiresIn);
+      expiryTimer = setTimeout(function () {
+        countdownEl.textContent = 'Expired — generate a new code';
+        qrImage.style.opacity = '0.3';
+      }, parseExpiresInSeconds(expiresIn) * 1000);
     }
 
     form.addEventListener('submit', function (event) {
@@ -217,7 +219,7 @@ export const QR_LOGIN_PAGE_HTML = String.raw`<!doctype html>
           downloadLink.href = data.qrImage;
           downloadLink.setAttribute('download', 'qr-login-' + filenameSuffix + '.png');
 
-          startCountdown(parseExpiresInSeconds(data.expiresIn));
+          startExpiry(data.expiresIn);
         })
         .catch(function (err) {
           errorEl.textContent = err.message || 'Something went wrong';
