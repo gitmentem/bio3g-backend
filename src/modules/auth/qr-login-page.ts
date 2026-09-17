@@ -48,9 +48,17 @@ export const QR_LOGIN_PAGE_HTML = String.raw`<!doctype html>
     border-radius: 8px;
     font-size: 14px;
   }
-  input:focus {
+  input:focus, select:focus {
     outline: 2px solid #2563eb;
     outline-offset: 1px;
+  }
+  select {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fff;
   }
   button {
     width: 100%;
@@ -129,6 +137,18 @@ export const QR_LOGIN_PAGE_HTML = String.raw`<!doctype html>
       <label for="serialNumber">Device serial number</label>
       <input id="serialNumber" type="text" autocomplete="off" required />
 
+      <label for="expiresInHours">Valid for</label>
+      <select id="expiresInHours">
+        <option value="12">12 hours</option>
+        <option value="24" selected>24 hours</option>
+        <option value="36">36 hours</option>
+        <option value="48">48 hours</option>
+        <option value="60">60 hours</option>
+        <option value="72">72 hours</option>
+        <option value="84">84 hours</option>
+        <option value="96">96 hours</option>
+      </select>
+
       <button id="generate-btn" type="submit">Generate QR code</button>
       <div id="error"></div>
     </form>
@@ -188,6 +208,7 @@ export const QR_LOGIN_PAGE_HTML = String.raw`<!doctype html>
         siteCode: document.getElementById('siteCode').value.trim(),
         userPin: document.getElementById('userPin').value,
         serialNumber: document.getElementById('serialNumber').value.trim(),
+        expiresInHours: Number(document.getElementById('expiresInHours').value),
       };
 
       fetch('/api/v1/auth/qr-login/generate', {

@@ -61,6 +61,18 @@ export async function markSerialNumberOccupied(
   );
 }
 
+export async function releaseSerialNumber(db: Db, serialNumber: string): Promise<void> {
+  await execute(
+    db,
+    `
+      UPDATE serial_number
+      SET occupied = 'No'
+      WHERE serial_number = ?
+    `,
+    [serialNumber],
+  );
+}
+
 export async function setSerialNumberReader(
   db: Db,
   options: { serialNumber: string; readerId: number },

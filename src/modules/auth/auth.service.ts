@@ -4,6 +4,7 @@ import { withPoolLease, type Db } from '../../db/pool.js';
 import {
   findSerialNumber,
   markSerialNumberOccupied,
+  releaseSerialNumber,
   type ISerialNumberRecord,
 } from '../../db/repositories/serial-numbers.repository.js';
 import {
@@ -80,7 +81,7 @@ function buildPayload(
   return payload;
 }
 
-async function validateSerialForSite(
+async function findSerialForSiteOrThrow(
   db: Db,
   site: ISiteLoginRecord,
   serialNumber: string,
@@ -93,6 +94,16 @@ async function validateSerialForSite(
   if (serial.siteId !== null && serial.siteId !== site.siteId) {
     throw new AppError('Serial number does not belong to this site', 403, 'SERIAL_SITE_MISMATCH');
   }
+
+  return serial;
+}
+
+async function validateSerialForSite(
+  db: Db,
+  site: ISiteLoginRecord,
+  serialNumber: string,
+): Promise<ISerialNumberRecord> {
+  const serial = await findSerialForSiteOrThrow(db, site, serialNumber);
 
   if (serial.occupied === 'Yes') {
     throw new AppError('Serial number is already in use', 409, 'SERIAL_OCCUPIED');
@@ -146,13 +157,17 @@ export async function mintQrLoginToken(
   siteCode: string,
   userPin: string,
   serialNumber: string,
+  expiresInHours?: number,
 ): Promise<IQrLoginToken> {
   const verified = await validateSiteCredentials(app, serverAddress, siteCode, userPin);
 
   const db = await app.dbPools.getPool(verified.serverAddress);
-  await validateSerialForSite(db, verified.site, serialNumber);
+  const serial = await findSerialForSiteOrThrow(db, verified.site, serialNumber);
+  if (serial.occupied === 'Yes') {
+    await releaseSerialNumber(db, serialNumber);
+  }
 
-  const expiresIn = app.config.QR_LOGIN_TOKEN_EXPIRES_IN;
+  const expiresIn = expiresInHours ? `${expiresInHours}h` : app.config.QR_LOGIN_TOKEN_EXPIRES_IN;
 
   const qrToken = app.jwt.sign(
     buildPayload(

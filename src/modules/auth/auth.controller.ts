@@ -74,8 +74,16 @@ export async function activateDevice(req: FastifyRequest, reply: FastifyReply) {
 }
 
 export async function generateQrLogin(req: FastifyRequest, reply: FastifyReply) {
-  const { serverAddress, siteCode, userPin, serialNumber } = req.body as TQrLoginGenerateBody;
-  const minted = await mintQrLoginToken(req.server, serverAddress, siteCode, userPin, serialNumber);
+  const { serverAddress, siteCode, userPin, serialNumber, expiresInHours } =
+    req.body as TQrLoginGenerateBody;
+  const minted = await mintQrLoginToken(
+    req.server,
+    serverAddress,
+    siteCode,
+    userPin,
+    serialNumber,
+    expiresInHours,
+  );
   const qrImage = await QRCode.toDataURL(minted.qrToken, { width: 480, margin: 2 });
 
   return reply.ok({

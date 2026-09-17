@@ -31,6 +31,7 @@ export type TRefreshBody = z.infer<typeof refreshSchema>;
 
 export const qrLoginGenerateSchema = verifySiteSchema.extend({
   serialNumber: z.string().min(1),
+  expiresInHours: z.coerce.number().int().min(12).max(96).optional(),
 });
 
 export type TQrLoginGenerateBody = z.infer<typeof qrLoginGenerateSchema>;
