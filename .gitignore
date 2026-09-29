@@ -2,6 +2,7 @@ node_modules/
 dist/
 APIs/
 .env
+database/keys/
 *.log
 coverage/
 .DS_Store
@@ -11,3 +12,5 @@ coverage/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+docs/
