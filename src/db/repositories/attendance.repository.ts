@@ -21,6 +21,7 @@ export interface IAttendanceRecord {
   employeeName: string;
   employeeStatus: string;
   readerId: number;
+  readerName: string;
   clockTime: string;
   status: number;
 }
@@ -32,6 +33,7 @@ interface IAttendanceRow extends RowDataPacket {
   employee_name: string | null;
   employee_status: string | null;
   reader_id: number;
+  reader_name: string | null;
   clock: string;
   status: number;
 }
@@ -44,6 +46,7 @@ function toAttendanceRecord(row: IAttendanceRow): IAttendanceRecord {
     employeeName: row.employee_name === null ? '' : String(row.employee_name),
     employeeStatus: row.employee_status === null ? '' : String(row.employee_status),
     readerId: Number(row.reader_id),
+    readerName: row.reader_name === null ? '' : String(row.reader_name),
     clockTime: String(row.clock),
     status: Number(row.status),
   };
@@ -119,11 +122,14 @@ export async function listAttendanceByDate(
         emp.name AS employee_name,
         emp.status AS employee_status,
         att.reader_id,
+        rdr.name AS reader_name,
         att.clock,
         att.status
       FROM attendance AS att
       JOIN employee AS emp
         ON att.employee_id = emp.employee_id
+      LEFT JOIN reader AS rdr
+        ON att.reader_id = rdr.reader_id
       WHERE emp.site_id = ?
         AND DATE(att.clock) = ?
       ORDER BY emp.name ASC, att.employee_id ASC, att.clock ASC, att.attendance_id ASC
