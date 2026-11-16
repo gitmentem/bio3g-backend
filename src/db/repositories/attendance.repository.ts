@@ -3,6 +3,7 @@ import type { Db } from '../pool.js';
 import { execute, query } from '../pool.js';
 
 export interface IAttendanceUploadInput {
+  attendanceSiteId: number;
   employeeId: number;
   employeePin: string;
   readerId: number;
@@ -77,6 +78,7 @@ export async function insertAttendance(db: Db, input: IAttendanceUploadInput): P
     db,
     `
       INSERT INTO attendance (
+        attendance_site_id,
         employee_pin,
         employee_id,
         reader_id,
@@ -92,9 +94,10 @@ export async function insertAttendance(db: Db, input: IAttendanceUploadInput): P
         clock_photo,
         site_activity_code
       )
-      VALUES (?, ?, ?, ?, 15, ?, ?, ?, 'No', 0, 0.0, ?, ?, NULL)
+      VALUES (?, ?, ?, ?, ?, 15, ?, ?, ?, 'No', 0, 0.0, ?, ?, NULL)
     `,
     [
+      input.attendanceSiteId,
       input.employeePin,
       input.employeeId,
       input.readerId,

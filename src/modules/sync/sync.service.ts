@@ -265,6 +265,7 @@ export async function uploadAttendance(
     }
 
     await insertAttendance(db, {
+      attendanceSiteId: user.siteId,
       employeeId: options.employeeId,
       employeePin: options.employeePin,
       readerId: reader.readerId,
